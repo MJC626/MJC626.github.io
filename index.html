@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>地图车辆优化分配工具</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2em;
+            margin-bottom: 10px;
+        }
+
+        .content {
+            padding: 30px;
+        }
+
+        .section {
+            margin-bottom: 30px;
+        }
+
+        .section h2 {
+            color: #333;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #667eea;
+        }
+
+        .map-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 10px;
+            max-height: 400px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 15px;
+            border-radius: 8px;
+        }
+
+        .map-item {
+            padding: 10px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+            background: #f9f9f9;
+        }
+
+        .map-item:hover {
+            border-color: #667eea;
+            background: #f0f4ff;
+        }
+
+        .map-item.selected {
+            border-color: #764ba2;
+            background: #e8e4ff;
+            font-weight: bold;
+        }
+
+        .map-item .region {
+            font-size: 0.8em;
+            color: #666;
+        }
+
+        .selected-maps {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .selected-tag {
+            background: #667eea;
+            color: white;
+            padding: 8px 15px;
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .selected-tag .remove {
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        .excluded-input {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .excluded-input input {
+            flex: 1;
+            padding: 10px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 1em;
+        }
+
+        .excluded-input button {
+            padding: 10px 20px;
+            background: #ff6b6b;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1em;
+        }
+
+        .excluded-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .excluded-tag {
+            background: #ff6b6b;
+            color: white;
+            padding: 8px 15px;
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .excluded-tag .remove {
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        .btn {
+            padding: 15px 40px;
+            font-size: 1.1em;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .result {
+            margin-top: 30px;
+            display: none;
+        }
+
+        .result.show {
+            display: block;
+        }
+
+        .result-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+
+        .result-table th,
+        .result-table td {
+            padding: 15px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .result-table th {
+            background: #f0f4ff;
+            color: #667eea;
+            font-weight: bold;
+        }
+
+        .total-time {
+            margin-top: 20px;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 10px;
+            text-align: center;
+            font-size: 1.3em;
+        }
+
+        .error {
+            background: #ffebee;
+            color: #c62828;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+        }
+
+        .actions {
+            text-align: center;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚗 地图车辆优化分配工具</h1>
+            <p>选择5个地图，获得最优车辆分配方案（每辆车仅使用一次）</p>
+        </div>
+
+        <div class="content">
+            <div class="section">
+                <h2>📍 选择地图 (已选: <span id="selectedCount">0</span>/5)</h2>
+                <div class="map-grid" id="mapGrid"></div>
+                <div class="selected-maps" id="selectedMaps"></div>
+            </div>
+
+            <div class="section">
+                <h2>🚫 剔除车辆</h2>
+                <div class="excluded-input">
+                    <input type="text" id="excludeInput" placeholder="输入要剔除的车辆名称">
+                    <button onclick="addExcluded()">添加</button>
+                </div>
+                <div class="excluded-list" id="excludedList"></div>
+            </div>
+
+            <div class="actions">
+                <button class="btn btn-primary" id="optimizeBtn" onclick="optimize()" disabled>计算最优分配</button>
+            </div>
+
+            <div class="result" id="result">
+                <h2>✅ 最优分配方案</h2>
+                <div id="errorMsg" class="error" style="display: none;"></div>
+                <table class="result-table" id="resultTable" style="display: none;">
+                    <thead>
+                        <tr>
+                            <th>地图</th>
+                            <th>分配车辆</th>
+                            <th>时间</th>
+                        </tr>
+                    </thead>
+                    <tbody id="resultBody"></tbody>
+                </table>
+                <div class="total-time" id="totalTime" style="display: none;"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let maps = [];
+
+        // 显示加载状态
+        document.getElementById('mapGrid').innerHTML = '<div style="grid-column:1/-1;text-align:center;color:#888;padding:20px;">⏳ 正在加载地图数据…</div>';
+
+        fetch('mapData.json')
+            .then(res => {
+                if (!res.ok) throw new Error('无法加载 mapData.json，状态码: ' + res.status);
+                return res.json();
+            })
+            .then(mapData => {
+                maps = mapData['地图列表'];
+                init();
+            })
+            .catch(err => {
+                document.getElementById('mapGrid').innerHTML =
+                    `<div style="grid-column:1/-1;color:#c62828;padding:20px;">❌ 数据加载失败：${err.message}</div>`;
+            });
+
+        let selectedMaps = [];
+        let excludedCars = [];
+
+        function init() {
+            const mapGrid = document.getElementById('mapGrid');
+            maps.forEach(m => {
+                const item = document.createElement('div');
+                item.className = 'map-item';
+                item.dataset.map = m['地图'];
+                item.innerHTML = `
+                    <div>${m['地图']}</div>
+                    <div class="region">${m['区域']}</div>
+                `;
+                item.addEventListener('click', () => toggleMap(m['地图'], item));
+                mapGrid.appendChild(item);
+            });
+        }
+
+        function toggleMap(mapName, element) {
+            if (element.classList.contains('selected')) {
+                element.classList.remove('selected');
+                selectedMaps = selectedMaps.filter(m => m !== mapName);
+            } else if (selectedMaps.length < 5) {
+                element.classList.add('selected');
+                selectedMaps.push(mapName);
+            }
+            updateSelectedDisplay();
+        }
+
+        function updateSelectedDisplay() {
+            const container = document.getElementById('selectedMaps');
+            container.innerHTML = '';
+            selectedMaps.forEach(map => {
+                const tag = document.createElement('div');
+                tag.className = 'selected-tag';
+                tag.innerHTML = `${map} <span class="remove" onclick="removeMap('${map}')">×</span>`;
+                container.appendChild(tag);
+            });
+            document.getElementById('selectedCount').textContent = selectedMaps.length;
+            document.getElementById('optimizeBtn').disabled = selectedMaps.length !== 5;
+        }
+
+        function removeMap(mapName) {
+            const item = document.querySelector(`[data-map="${mapName}"]`);
+            item.classList.remove('selected');
+            selectedMaps = selectedMaps.filter(m => m !== mapName);
+            updateSelectedDisplay();
+        }
+
+        function addExcluded() {
+            const input = document.getElementById('excludeInput');
+            const car = input.value.trim();
+            if (car && !excludedCars.includes(car)) {
+                excludedCars.push(car);
+                updateExcludedDisplay();
+            }
+            input.value = '';
+        }
+
+        document.getElementById('excludeInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') addExcluded();
+        });
+
+        function updateExcludedDisplay() {
+            const container = document.getElementById('excludedList');
+            container.innerHTML = '';
+            excludedCars.forEach(car => {
+                const tag = document.createElement('div');
+                tag.className = 'excluded-tag';
+                tag.innerHTML = `${car} <span class="remove" onclick="removeExcluded('${car}')">×</span>`;
+                container.appendChild(tag);
+            });
+        }
+
+        function removeExcluded(car) {
+            excludedCars = excludedCars.filter(c => c !== car);
+            updateExcludedDisplay();
+        }
+
+        function getMapInfo(mapName) {
+            for (const m of maps) {
+                if (m['地图'] === mapName) {
+                    return m;
+                }
+            }
+            return null;
+        }
+
+        function cartesianProduct(arrays) {
+            return arrays.reduce((a, b) => {
+                return a.flatMap(x => b.map(y => [...x, y]));
+            }, [[]]);
+        }
+
+        function getAllCarsForMap(mapInfo, excluded) {
+            const carMap = new Map();
+            const excludedSet = new Set(excluded.map(car => car.trim()).filter(Boolean));
+
+            function addCar(carName, time, tier) {
+                const car = (carName || '').trim();
+                if (!car || excludedSet.has(car) || time == null) return;
+
+                const existing = carMap.get(car);
+                if (!existing || tier > existing.tier || (tier === existing.tier && time < existing.time)) {
+                    carMap.set(car, { car: car, time: time, tier: tier });
+                }
+            }
+
+            if (mapInfo['最佳车辆']) {
+                for (const car of mapInfo['最佳车辆'].split('/')) {
+                    addCar(car, mapInfo['最佳时间'], 10);
+                }
+            }
+
+            for (const rank of mapInfo['排名']) {
+                if (!rank['车辆']) continue;
+                for (const car of rank['车辆'].split('/')) {
+                    addCar(car, rank['时间'], rank['tier']);
+                }
+            }
+
+            return Array.from(carMap.values()).sort(compareCarOption);
+        }
+
+        function compareCarOption(a, b) {
+            if (b.tier !== a.tier) return b.tier - a.tier;
+            return a.time - b.time;
+        }
+
+        function getAssignmentScore(assigned) {
+            const tiers = [10, 5, 4, 3, 2, 1];
+            const tierCounts = {};
+
+            for (const tier of tiers) {
+                tierCounts[tier] = assigned.filter(item => item.tier === tier).length;
+            }
+
+            return {
+                assignedCount: assigned.length,
+                tierCounts: tierCounts,
+                totalTime: assigned.reduce((sum, item) => sum + item.time, 0)
+            };
+        }
+
+        function compareAssignmentScore(a, b) {
+            if (a.assignedCount !== b.assignedCount) {
+                return a.assignedCount - b.assignedCount;
+            }
+
+            for (const tier of [10, 5, 4, 3, 2, 1]) {
+                if (a.tierCounts[tier] !== b.tierCounts[tier]) {
+                    return a.tierCounts[tier] - b.tierCounts[tier];
+                }
+            }
+
+            return b.totalTime - a.totalTime;
+        }
+
+        function findOptimalAssignment(selected, excluded) {
+            const mapCars = {};
+            for (const mapName of selected) {
+                const mapInfo = getMapInfo(mapName);
+                if (mapInfo) {
+                    mapCars[mapName] = getAllCarsForMap(mapInfo, excluded);
+                }
+            }
+
+            if (Object.keys(mapCars).length !== selected.length) {
+                return { error: '部分地图未找到' };
+            }
+
+            const carOptions = selected.map(mapName => [null, ...mapCars[mapName]]);
+            const allCombinations = cartesianProduct(carOptions);
+            let bestAssignment = null;
+            let bestScore = null;
+
+            for (const combination of allCombinations) {
+                const assigned = combination.filter(Boolean);
+                const carsUsed = assigned.map(item => item.car);
+                if (new Set(carsUsed).size !== carsUsed.length) continue;
+
+                const score = getAssignmentScore(assigned);
+                if (!bestScore || compareAssignmentScore(score, bestScore) > 0) {
+                    bestScore = score;
+                    bestAssignment = {};
+                    for (let i = 0; i < selected.length; i++) {
+                        bestAssignment[selected[i]] = combination[i];
+                    }
+                }
+            }
+
+            if (!bestAssignment) {
+                return { error: '无法找到有效的分配方案' };
+            }
+
+            return {
+                assignment: bestAssignment,
+                assignedCount: bestScore.assignedCount,
+                totalTime: bestScore.totalTime,
+                tierCounts: bestScore.tierCounts
+            };
+        }
+
+        function optimize() {
+            const resultDiv = document.getElementById('result');
+            const errorMsg = document.getElementById('errorMsg');
+            const resultTable = document.getElementById('resultTable');
+            const totalTimeDiv = document.getElementById('totalTime');
+            const resultBody = document.getElementById('resultBody');
+
+            resultDiv.classList.add('show');
+            errorMsg.style.display = 'none';
+            resultTable.style.display = 'none';
+            totalTimeDiv.style.display = 'none';
+
+            const result = findOptimalAssignment(selectedMaps, excludedCars);
+
+            if (result.error) {
+                errorMsg.textContent = result.error;
+                errorMsg.style.display = 'block';
+                return;
+            }
+
+            resultBody.innerHTML = '';
+            for (const [map, info] of Object.entries(result.assignment)) {
+                const row = document.createElement('tr');
+                if (info) {
+                    const tierLabel = info.tier === 10 ? '最佳' : `Tier ${info.tier}`;
+                    row.innerHTML = `
+                        <td>${map}</td>
+                        <td><strong>${info.car}</strong> (${tierLabel})</td>
+                        <td>${info.time}</td>
+                    `;
+                } else {
+                    row.innerHTML = `
+                        <td>${map}</td>
+                        <td><strong>未分配</strong></td>
+                        <td>-</td>
+                    `;
+                }
+                resultBody.appendChild(row);
+            }
+
+            resultTable.style.display = 'table';
+            totalTimeDiv.textContent = `已分配 ${result.assignedCount}/5，最佳: ${result.tierCounts[10]}，Tier 5: ${result.tierCounts[5]}，Tier 4: ${result.tierCounts[4]}，Tier 3: ${result.tierCounts[3]}，Tier 2: ${result.tierCounts[2]}，Tier 1: ${result.tierCounts[1]}，总时间: ${result.totalTime.toFixed(1)}`;
+            totalTimeDiv.style.display = 'block';
+        }
+
+        init();
+    </script>
+</body>
+
+</html>
