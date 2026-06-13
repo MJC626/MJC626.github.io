@@ -233,6 +233,39 @@
             text-align: center;
             margin-top: 20px;
         }
+
+        .binding-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px;
+            background: #f9f9f9;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+
+        .binding-item .map-name {
+            flex: 1;
+            font-weight: bold;
+        }
+
+        .binding-item select {
+            flex: 2;
+            padding: 8px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 1em;
+        }
+
+        .binding-item .remove-bind {
+            background: #ff6b6b;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+        }
     </style>
 </head>
 
@@ -240,7 +273,7 @@
     <div class="container">
         <div class="header">
             <h1>🚗 地图车辆优化分配工具</h1>
-            <p>选择5个地图，获得最优车辆分配方案（每辆车仅使用一次）</p>
+            <p>选择1-5个地图，获得最优车辆分配方案（每辆车仅使用一次）</p>
         </div>
 
         <div class="content">
@@ -248,6 +281,12 @@
                 <h2>📍 选择地图 (已选: <span id="selectedCount">0</span>/5)</h2>
                 <div class="map-grid" id="mapGrid"></div>
                 <div class="selected-maps" id="selectedMaps"></div>
+            </div>
+
+            <div class="section" id="manualBindingSection" style="display:none;">
+                <h2>🔗 手动绑定地图与车辆</h2>
+                <p style="margin-bottom:15px;color:#666;">点击下方已选地图为其绑定特定车辆，未绑定的地图将由系统自动分配最优方案</p>
+                <div id="manualBindings"></div>
             </div>
 
             <div class="section">
@@ -303,6 +342,7 @@
 
         let selectedMaps = [];
         let excludedCars = [];
+        let manualBindings = {}; // 存储手动绑定的地图-车辆关系
 
         function init() {
             const mapGrid = document.getElementById('mapGrid');
@@ -323,6 +363,7 @@
             if (element.classList.contains('selected')) {
                 element.classList.remove('selected');
                 selectedMaps = selectedMaps.filter(m => m !== mapName);
+                delete manualBindings[mapName]; // 移除手动绑定
             } else if (selectedMaps.length < 5) {
                 element.classList.add('selected');
                 selectedMaps.push(mapName);
@@ -340,14 +381,77 @@
                 container.appendChild(tag);
             });
             document.getElementById('selectedCount').textContent = selectedMaps.length;
-            document.getElementById('optimizeBtn').disabled = selectedMaps.length !== 5;
+            document.getElementById('optimizeBtn').disabled = selectedMaps.length === 0;
+            
+            // 更新手动绑定区域
+            updateManualBindingsSection();
         }
 
         function removeMap(mapName) {
             const item = document.querySelector(`[data-map="${mapName}"]`);
             item.classList.remove('selected');
             selectedMaps = selectedMaps.filter(m => m !== mapName);
+            delete manualBindings[mapName]; // 移除手动绑定
             updateSelectedDisplay();
+        }
+
+        function updateManualBindingsSection() {
+            const section = document.getElementById('manualBindingSection');
+            const container = document.getElementById('manualBindings');
+            
+            if (selectedMaps.length === 0) {
+                section.style.display = 'none';
+                return;
+            }
+            
+            section.style.display = 'block';
+            container.innerHTML = '';
+            
+            selectedMaps.forEach(mapName => {
+                const mapInfo = getMapInfo(mapName);
+                const allCars = getAllCarsForMap(mapInfo, []);
+                
+                const div = document.createElement('div');
+                div.className = 'binding-item';
+                
+                const select = document.createElement('select');
+                select.dataset.map = mapName;
+                
+                // 添加默认选项
+                const defaultOption = document.createElement('option');
+                defaultOption.value = '';
+                defaultOption.textContent = '自动分配最优车辆';
+                select.appendChild(defaultOption);
+                
+                // 添加所有可选车辆
+                allCars.forEach(carInfo => {
+                    const option = document.createElement('option');
+                    option.value = carInfo.car;
+                    const tierLabel = carInfo.tier === 10 ? '最佳' : `Tier ${carInfo.tier}`;
+                    option.textContent = `${carInfo.car} (${tierLabel}, ${carInfo.time})`;
+                    // 如果已有绑定，选中对应选项
+                    if (manualBindings[mapName] === carInfo.car) {
+                        option.selected = true;
+                    }
+                    select.appendChild(option);
+                });
+                
+                select.addEventListener('change', (e) => {
+                    const map = e.target.dataset.map;
+                    const car = e.target.value;
+                    if (car) {
+                        manualBindings[map] = car;
+                    } else {
+                        delete manualBindings[map];
+                    }
+                });
+                
+                div.innerHTML = `
+                    <span class="map-name">${mapName}</span>
+                `;
+                div.appendChild(select);
+                container.appendChild(div);
+            });
         }
 
         function addExcluded() {
@@ -459,8 +563,22 @@
             return b.totalTime - a.totalTime;
         }
 
-        function findOptimalAssignment(selected, excluded) {
+        function findOptimalAssignment(selected, excluded, bindings) {
             const mapCars = {};
+            const allBoundCars = new Set(Object.values(bindings));
+            
+            // 检查手动绑定的车辆是否冲突
+            if (new Set(allBoundCars).size !== allBoundCars.size) {
+                return { error: '手动绑定的车辆有重复，请检查' };
+            }
+            
+            // 检查手动绑定的车辆是否在排除列表中
+            for (const car of allBoundCars) {
+                if (excluded.includes(car)) {
+                    return { error: `车辆 ${car} 在剔除列表中，无法绑定` };
+                }
+            }
+            
             for (const mapName of selected) {
                 const mapInfo = getMapInfo(mapName);
                 if (mapInfo) {
@@ -471,8 +589,28 @@
             if (Object.keys(mapCars).length !== selected.length) {
                 return { error: '部分地图未找到' };
             }
+            
+            // 准备汽车选项，处理手动绑定的地图
+            const carOptions = [];
+            const order = [];
+            
+            for (const mapName of selected) {
+                order.push(mapName);
+                if (bindings[mapName]) {
+                    // 已手动绑定，固定选项
+                    const carInfo = mapCars[mapName].find(c => c.car === bindings[mapName]);
+                    if (!carInfo) {
+                        return { error: `绑定的车辆 ${bindings[mapName]} 不适用于地图 ${mapName}` };
+                    }
+                    carOptions.push([carInfo]);
+                } else {
+                    // 未绑定，提供所有选项
+                    // 排除已手动绑定的车辆
+                    const availableCars = mapCars[mapName].filter(c => !allBoundCars.has(c.car));
+                    carOptions.push([null, ...availableCars]);
+                }
+            }
 
-            const carOptions = selected.map(mapName => [null, ...mapCars[mapName]]);
             const allCombinations = cartesianProduct(carOptions);
             let bestAssignment = null;
             let bestScore = null;
@@ -480,14 +618,16 @@
             for (const combination of allCombinations) {
                 const assigned = combination.filter(Boolean);
                 const carsUsed = assigned.map(item => item.car);
+                
+                // 检查车辆是否重复（手动绑定的应该已经不重复，但确保一下）
                 if (new Set(carsUsed).size !== carsUsed.length) continue;
 
                 const score = getAssignmentScore(assigned);
                 if (!bestScore || compareAssignmentScore(score, bestScore) > 0) {
                     bestScore = score;
                     bestAssignment = {};
-                    for (let i = 0; i < selected.length; i++) {
-                        bestAssignment[selected[i]] = combination[i];
+                    for (let i = 0; i < order.length; i++) {
+                        bestAssignment[order[i]] = combination[i];
                     }
                 }
             }
@@ -500,7 +640,9 @@
                 assignment: bestAssignment,
                 assignedCount: bestScore.assignedCount,
                 totalTime: bestScore.totalTime,
-                tierCounts: bestScore.tierCounts
+                tierCounts: bestScore.tierCounts,
+                manualBindings: bindings,
+                totalMaps: selected.length
             };
         }
 
@@ -516,7 +658,7 @@
             resultTable.style.display = 'none';
             totalTimeDiv.style.display = 'none';
 
-            const result = findOptimalAssignment(selectedMaps, excludedCars);
+            const result = findOptimalAssignment(selectedMaps, excludedCars, manualBindings);
 
             if (result.error) {
                 errorMsg.textContent = result.error;
@@ -527,11 +669,14 @@
             resultBody.innerHTML = '';
             for (const [map, info] of Object.entries(result.assignment)) {
                 const row = document.createElement('tr');
+                const isManual = result.manualBindings[map];
+                
                 if (info) {
                     const tierLabel = info.tier === 10 ? '最佳' : `Tier ${info.tier}`;
+                    const manualTag = isManual ? ' <span style="color:#667eea;">(手动绑定)</span>' : '';
                     row.innerHTML = `
                         <td>${map}</td>
-                        <td><strong>${info.car}</strong> (${tierLabel})</td>
+                        <td><strong>${info.car}</strong> (${tierLabel})${manualTag}</td>
                         <td>${info.time}</td>
                     `;
                 } else {
@@ -545,7 +690,8 @@
             }
 
             resultTable.style.display = 'table';
-            totalTimeDiv.textContent = `已分配 ${result.assignedCount}/5，最佳: ${result.tierCounts[10]}，Tier 5: ${result.tierCounts[5]}，Tier 4: ${result.tierCounts[4]}，Tier 3: ${result.tierCounts[3]}，Tier 2: ${result.tierCounts[2]}，Tier 1: ${result.tierCounts[1]}，总时间: ${result.totalTime.toFixed(1)}`;
+            const totalMaps = result.totalMaps;
+            totalTimeDiv.textContent = `已分配 ${result.assignedCount}/${totalMaps}，最佳: ${result.tierCounts[10]}，Tier 5: ${result.tierCounts[5]}，Tier 4: ${result.tierCounts[4]}，Tier 3: ${result.tierCounts[3]}，Tier 2: ${result.tierCounts[2]}，Tier 1: ${result.tierCounts[1]}，总时间: ${result.totalTime.toFixed(1)}`;
             totalTimeDiv.style.display = 'block';
         }
 
